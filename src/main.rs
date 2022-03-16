@@ -12,6 +12,8 @@ use crate::material::Material;
 use crate::renderables::{Plane, Sphere};
 use crate::scene::{Scene};
 
+use std::time::Instant;
+
 mod material;
 mod matrixes;
 mod renderables;
@@ -146,18 +148,22 @@ fn main() {
   //let sphere = (scene.objects.last().unwrap());//.downcast::<Sphere>();
   //let mut s = sphere.as_mut();
   //let mut s = Sphere {center: vec3(0., 0., -16.), radius: 4.};
-  let mut time: f32 = 0.;
+  let mut t: f32 = 0.;
+  let mut then: Instant = Instant::now();
   let radius:f32 = 12.;
   loop {
-    render(&window, Arc::clone(&scene), &vec3(time.sin()*radius,3.,time.cos()*radius), &vec3(0.,0.,0.));
+    let now = Instant::now();
+    let dt = now.duration_since(then).as_secs_f32() * 1000.0;
+    then = now;
+    render(&window, Arc::clone(&scene), &vec3(t.sin()*radius, 3., t.cos()*radius), &vec3(0., 0., 0.));
     // render(&window, Arc::clone(&scene), &vec3(10.0, 10.0, 10.0), &vec3(0., 0., 0.));
 
     // render(&window, Arc::clone(&scene), &vec3(7.0, 7.0, 10.0), &vec3(0., 0., 0.));
-
+    window.mvaddstr(0, 0, format!("{}ms",dt));
 
     // sphere.borrow_mut().center = vec3(0.0,0.0,time.sin());
     // sphere.borrow_mut().radius = (3. + (time*2.).sin()) * 2.0;
-    time += 0.04;
+    t += 0.04;
     match window.getch() {
       Some(Input::KeyDC) => break,
       Some(Input::KeyResize) => {resize_term(0,0);},
