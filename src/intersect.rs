@@ -8,7 +8,7 @@ pub struct IntersectResult {
 	pub dist: f32,
 	pub hit: TVec3<f32>,
 	pub normal: TVec3<f32>,
-	pub obj: Rc<RefCell<dyn Renderable>>,
+	pub obj: Box<dyn Renderable>,
 }
 
 impl Ord for IntersectResult {

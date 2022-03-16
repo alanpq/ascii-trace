@@ -32,7 +32,7 @@ fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) ->
       // 1.-(result.dist/50.)
 
       // normal render
-      0.1 + dot.max(0_f32) * result.obj.borrow().material().albedo
+      0.1 + dot.max(0_f32) * result.obj.material().albedo
       * match &scene.intersect(&(result.hit + result.normal * 0.001), &light_dir) {
         Some(_) => 0.,
         None => 1.,
@@ -117,32 +117,32 @@ fn main() {
   let scene = Arc::new(RwLock::new(Scene {
     objects: Vec::new()
   }));
-  scene.write().unwrap().objects.push(Rc::new(RefCell::new(Plane {
+  scene.write().unwrap().add_object(Plane {
     center: vec3(0.0, -5.0, 0.0),
     size: vec2(100.0, 100.0),
     material: Material {
       albedo: 0.5,
     }
-  })));
+  });
   //let mut balls: Vec<Box<Sphere>> = Vec::new();
   let mut rng = thread_rng();
   for _ in 0..3 {
-    scene.write().unwrap().objects.push(Rc::new(RefCell::new(Sphere {
+    scene.write().unwrap().add_object(Sphere {
       center: vec3(rng.gen_range(-10_f32..10_f32), rng.gen_range(-5_f32..5_f32), rng.gen_range(-10_f32..10_f32)),
       radius: rng.gen_range(2_f32..4_f32),
       material: Material {
         albedo: 1.,
       }
-    })));
+    });
   }
-  let sphere = Rc::new(RefCell::new(Sphere {
+  let sphere = Sphere {
     center: vec3(0., 0., 0.),
     radius: 4.,
     material: Material {
       albedo: 1.,
     }
-  }));
-  scene.write().unwrap().objects.push(sphere);
+  };
+  scene.write().unwrap().add_object(sphere);
   //let sphere = (scene.objects.last().unwrap());//.downcast::<Sphere>();
   //let mut s = sphere.as_mut();
   //let mut s = Sphere {center: vec3(0., 0., -16.), radius: 4.};

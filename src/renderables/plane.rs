@@ -2,6 +2,7 @@ use crate::material::Material;
 use super::Renderable;
 use nalgebra_glm::{vec3, vec2, TVec3, TVec2};
 
+#[derive(Clone, Copy)]
 pub struct Plane {
     pub material: Material,
     pub center: TVec3<f32>,
@@ -23,11 +24,9 @@ impl Renderable for Plane {
         }
         None
     }
-
     fn get_normal(&self, _hit: &TVec3<f32>) -> TVec3<f32> {
         vec3(0., 1., 0.)
     }
-
     fn material(&self) -> &Material {
         return &self.material;
     }

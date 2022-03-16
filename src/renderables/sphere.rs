@@ -2,6 +2,7 @@ use super::Renderable;
 use crate::material::Material;
 use nalgebra_glm::{vec3, vec2, TVec3, TVec2};
 
+#[derive(Clone, Copy)]
 pub struct Sphere {
     pub material: Material,
     pub center: TVec3<f32>,
