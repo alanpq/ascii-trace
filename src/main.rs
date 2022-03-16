@@ -1,16 +1,16 @@
 extern crate nalgebra_glm as glm;
 extern crate pancurses;
 
-use glm::{vec3, vec2, vec4, TVec3, TVec2, Mat4x4, mat4x4, rotate_x, rotate_y, rotate_z, identity, U4};
+use glm::{vec3, vec2, vec4, TVec3};
 use pancurses::{endwin, initscr, noecho, Input, resize_term};
 use rand::{thread_rng, Rng};
 use std::rc::Rc;
-use std::cell::{Ref, RefCell};
-use std::cmp::Ordering;
+use std::cell::{RefCell};
+
 use std::sync::{Arc, RwLock};
 use crate::material::Material;
-use crate::renderables::{Plane, Renderable, Sphere};
-use crate::scene::{Scene, scene_intersect};
+use crate::renderables::{Plane, Sphere};
+use crate::scene::{Scene};
 
 mod material;
 mod matrixes;
@@ -23,8 +23,8 @@ const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
 
 
 fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) -> f32 {
-
-  match scene_intersect(source, dir, scene.clone()) {
+  let scene = scene.read().unwrap();
+  match &scene.intersect(source, dir) {
     Some(result) => {
       let light_dir = glm::normalize(&vec3(1., 1., 1.));
       let dot: f32 = glm::dot(&result.normal, &light_dir);
@@ -32,8 +32,8 @@ fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) ->
       // 1.-(result.dist/50.)
 
       // normal render
-      0.1 + dot.max(0_f32) * &result.obj.borrow().material().albedo 
-      * match scene_intersect(&(result.hit + result.normal * 0.001), &&light_dir, scene.clone()) {
+      0.1 + dot.max(0_f32) * result.obj.borrow().material().albedo
+      * match &scene.intersect(&(result.hit + result.normal * 0.001), &light_dir) {
         Some(_) => 0.,
         None => 1.,
       }
@@ -142,7 +142,7 @@ fn main() {
       albedo: 1.,
     }
   }));
-  scene.write().unwrap().objects.push(sphere.clone());
+  scene.write().unwrap().objects.push(sphere);
   //let sphere = (scene.objects.last().unwrap());//.downcast::<Sphere>();
   //let mut s = sphere.as_mut();
   //let mut s = Sphere {center: vec3(0., 0., -16.), radius: 4.};
