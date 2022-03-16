@@ -8,152 +8,19 @@ use std::rc::Rc;
 use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
+use crate::material::Material;
+use crate::renderables::{Plane, Renderable, Sphere};
+use crate::scene::{Scene, scene_intersect};
 
+mod material;
 mod matrixes;
+mod renderables;
+mod intersect;
+mod scene;
 // use crate::matrixes;
-
-struct Scene {
-  objects: Vec<Rc<RefCell<dyn Renderable>>>
-}
-
-struct Material {
-  albedo: f32,
-}
-
-struct Sphere {
-  material: Material,
-  center: TVec3<f32>,
-  radius: f32,
-}
-
-struct Plane {
-  material: Material,
-  center: TVec3<f32>,
-  size: TVec2<f32>,
-}
-
-trait Renderable {
-  fn ray_intersect(&self, source: &TVec3<f32>, dir: &TVec3<f32>) -> Option<f32>;
-  fn get_normal(&self, hit: &TVec3<f32>) -> TVec3<f32>;
-  fn material(&self) -> &Material;
-}
-
-impl Renderable for Sphere {
-  fn ray_intersect(&self, source: &TVec3<f32>, dir: &TVec3<f32>) -> Option<f32> {
-    let l = &self.center - source;
-    let tca = glm::dot(&l, dir);
-    let d2 = glm::magnitude2(&l) - tca * tca;
-    if d2 > self.radius * self.radius {
-      return None;
-    }
-    let thc = (self.radius * self.radius - d2).sqrt();
-    let mut t0 = tca - thc;
-    let t1 = tca + thc;
-    if t0 < 0_f32 {
-      t0 = t1;
-    }
-    if t0 < 0_f32 {
-      return None;
-    }
-    return Some(t0);
-  }
-  
-  fn get_normal(&self, hit: &TVec3<f32>) -> TVec3<f32> {
-    glm::normalize(&(hit - self.center))
-  }
-
-  fn material(&self) -> &Material {
-    return &self.material;
-  }
-}
-
-impl Renderable for Plane {
-  
-  // yoinked from https://stackoverflow.com/questions/5666222/3d-line-plane-intersection/18543221#18543221
-  fn ray_intersect(&self, source: &TVec3<f32>, dir: &TVec3<f32>) -> Option<f32> {
-    let normal = vec3(0., 1., 0.);
-    let dot = glm::dot(&normal, dir);
-    if dot.abs() > 1e-3 {
-      let w = source - self.center;
-      let d = -glm::dot(&normal, &w) / dot;
-      let pt = (source + (dir * d)) + self.center;
-      if d > 0. && pt.x.abs() < self.size.x && pt.z.abs() < self.size.y {
-        return Some(d);
-      }
-    }
-    None
-  }
-
-  fn get_normal(&self, _hit: &TVec3<f32>) -> TVec3<f32> {
-    vec3(0., 1., 0.)
-  }
-
-  fn material(&self) -> &Material {
-    return &self.material;
-  }
-}
 
 const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
 
-struct IntersectResult {
-  dist: f32,
-  hit: TVec3<f32>,
-  normal: TVec3<f32>,
-  obj: Rc<RefCell<dyn Renderable>>,
-}
-
-impl Ord for IntersectResult {
-  fn cmp(&self, other: &Self) -> Ordering {
-    if self.dist < other.dist {
-      Ordering::Less
-    } else if self.dist > other.dist {
-      Ordering::Greater
-    } else {
-      Ordering::Equal
-    }
-  }
-}
-
-impl Eq for IntersectResult {}
-
-impl PartialOrd for IntersectResult {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-    Some(self.cmp(other))
-  }
-}
-
-impl PartialEq for IntersectResult {
-  fn eq(&self, other: &Self) -> bool {
-    self.dist == other.dist
-}
-}
-
-
-fn scene_intersect<'a>(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) -> Option<IntersectResult> {
-  let mut min_dist = f32::MAX;
-
-  (&scene.read().unwrap().objects).into_iter().map(|obj| {
-    return match obj.borrow().ray_intersect(source, dir) {
-      Some(dist) => {
-        if dist >= min_dist {
-          return None;
-        }
-        min_dist = dist;
-        let hit = source + dir*dist;
-        return Some(IntersectResult {
-          dist: dist,
-          hit: hit,
-          normal: obj.clone().borrow().get_normal(&hit),
-          obj: obj.clone(),
-        });
-        //dot: f32 = glm::dot(&normal, &vec3(1., 1., 1.));
-      },
-      None => None,
-    }
-  }).filter(|x| x.is_some()).min_by(|a,b| {
-    a.as_ref().unwrap().cmp(&b.as_ref().unwrap())
-  }).unwrap_or_default()
-}
 
 fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) -> f32 {
 
@@ -245,7 +112,7 @@ fn main() {
   window.printw("Hello Rust");
   window.refresh();
   window.nodelay(true);
-  resize_term(40, 100);
+  resize_term(20, 50);
   noecho();
   let scene = Arc::new(RwLock::new(Scene {
     objects: Vec::new()
@@ -293,8 +160,8 @@ fn main() {
     time += 0.04;
     match window.getch() {
       Some(Input::KeyDC) => break,
-      Some(_) => (),
-      None => (),
+      Some(Input::KeyResize) => {resize_term(0,0);},
+      _ => {},
     }
   }
   endwin();
