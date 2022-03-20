@@ -27,7 +27,7 @@ const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
 
 fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<Scene>) -> f32 {
   // let scene = scene.unwrap();
-  match &scene.intersect(source, dir) {
+  let res = match &scene.intersect(source, dir) {
     Some(result) => {
       let light_dir = glm::normalize(&vec3(1., 1., 1.));
       let dot: f32 = glm::dot(&result.normal, &light_dir);
@@ -42,8 +42,10 @@ fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<Scene>) -> f32 {
       }
     },
     None => 0.,
-  }
-  //1.
+  };
+
+  coz::scope!("cast_ray");
+  res
 }
 
 // currently using view_angles also for target_pos (cos im lazy)
@@ -61,6 +63,8 @@ fn render(win: Arc<pancurses::Window>, scene: Arc<Scene>, view_pos: &TVec3<f32>,
   chars.into_iter().for_each(|c| {
     win.addch(c);
   });
+
+  coz::scope!("render");
 }
 
 fn pixel(scene: Arc<Scene>, view_pos: TVec3<f32>, view_angles: TVec3<f32>, w: i32, h: i32, fov: f32, i: i32) -> char {
@@ -93,6 +97,7 @@ fn pixel(scene: Arc<Scene>, view_pos: TVec3<f32>, view_angles: TVec3<f32>, w: i3
     lum = 1.;
   }
   LUT[(lum * 12.) as usize] as char
+  coz::scope!("pixel");
 }
 
 fn main() {
@@ -156,6 +161,7 @@ fn main() {
       Some(Input::KeyResize) => {resize_term(0,0);},
       _ => {},
     }
+    coz::scope!("main loop");
   }
   endwin();
 }
