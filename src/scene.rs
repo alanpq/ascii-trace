@@ -18,8 +18,8 @@ impl Scene {
 	pub fn intersect<'a>(&self, source: &TVec3<f32>, dir: &TVec3<f32>) -> Option<IntersectResult> {
 		// let mut min_dist = f32::MAX;
 
-		self.objects.par_iter().filter_map(|obj: &Box<dyn Renderable>| {
-			return match obj.ray_intersect(source, dir) {
+		self.objects.iter().filter_map(|obj: &Box<dyn Renderable>| {
+			match obj.ray_intersect(source, dir) {
 				Some(dist) => {
 					let hit = source + dir * dist;
 					return Some(IntersectResult {

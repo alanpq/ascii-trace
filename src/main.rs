@@ -2,7 +2,7 @@ extern crate nalgebra_glm as glm;
 extern crate pancurses;
 
 use glm::{vec3, vec2, vec4, TVec3};
-use pancurses::{endwin, initscr, noecho, Input, resize_term};
+use pancurses::{endwin, initscr, noecho, Input, resize_term, Window};
 use rand::{thread_rng, Rng};
 use std::rc::Rc;
 use std::cell::{RefCell};
@@ -13,6 +13,7 @@ use crate::renderables::{Plane, Sphere};
 use crate::scene::{Scene};
 
 use std::time::Instant;
+use rayon::prelude::*;
 
 mod material;
 mod matrixes;
@@ -24,8 +25,8 @@ mod scene;
 const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
 
 
-fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) -> f32 {
-  let scene = scene.read().unwrap();
+fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<Scene>) -> f32 {
+  // let scene = scene.unwrap();
   match &scene.intersect(source, dir) {
     Some(result) => {
       let light_dir = glm::normalize(&vec3(1., 1., 1.));
@@ -46,67 +47,52 @@ fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) ->
 }
 
 // currently using view_angles also for target_pos (cos im lazy)
-fn render(win: &pancurses::Window, scene: Arc<RwLock<Scene>>, view_pos: &TVec3<f32>, view_angles: &TVec3<f32>) {
+fn render(win: Arc<pancurses::Window>, scene: Arc<Scene>, view_pos: &TVec3<f32>, view_angles: &TVec3<f32>) {
   let size = win.get_max_yx();
-  let w = size.1 as f32;
-  let h = size.0 as f32;
   win.mv(0, 0);
   // let fov: f32 = std::f32::consts::PI/1.2; // ortho fov
   let fov: f32 = std::f32::consts::PI/3.;
-  for j in 0..size.0 {
-    for i in 0..size.1 {
-      // let x: f32 = (2.* (i as f32 + 0.5) / (size.1 as f32 - 1.))*(fov / 2. ).tan() * size.1 as f32/size.0 as f32;
-      // let y: f32 = -(2.* (j as f32 + 0.5) / (size.0 as f32 - 1.))*(fov / 2. ).tan();
-      // let dir: TVec3<f32> = glm::normalize(&vec3(x,y,-1.));
-      
-      // let forward = vec3(eulerA.y.sin() * eulerA.x.cos(), eulerA.x.cos(), eulerA.y.cos() * eulerA.x.cos());
-      // let up      = vec3(eulerA.y.sin() * eulerA.x.cos(), eulerA.x.sin(), eulerA.y.cos() * eulerA.x.cos() );
-      // //let up = vec3(0.,1.,0.);
-      // let right = glm::cross(&up, &forward);
-      let px = i as f32;
-      let py = j as f32;
+  let area = size.0 * size.1;
+  let chars: Vec<char> = (0..area).into_par_iter().chunks(1).map(|idxs: Vec<i32>| -> Vec<char> {
+    idxs.into_iter().map(|i| {
+      pixel(scene.clone(), *view_pos, *view_angles, size.1, size.0, fov, i)
+    }).collect()
+  }).flatten().collect();
+  chars.into_iter().for_each(|c| {
+    win.addch(c);
+  });
+}
 
-      // normalized device coords (screenspace [0,1] both axes)
-      let ndcx = (px + 0.5) / w;
-      let ndcy = (py + 0.5) / h;
+fn pixel(scene: Arc<Scene>, view_pos: TVec3<f32>, view_angles: TVec3<f32>, w: i32, h: i32, fov: f32, i: i32) -> char {
+  let x = i % w;
+  let y = i / w;
 
-      // screen space coords ([-1,1] both axes, origin at center)
-      let fov_fac = (fov/2.).tan();
-      let ssx = (2. * ndcx - 1.) * (w/h) * fov_fac;
-      // inverted to flip y axis
-      let ssy = (1. - 2. * ndcy) * fov_fac * 2.; // * 2, as 1 character is twice as tall as it is wide (roughly)
+  let px = x as f32;
+  let py = y as f32;
+  let w = w as f32;
+  let h = h as f32;
 
-      // let c2w = matrixes::fps_matrix(view_pos, &view_angles.xy());
+  // normalized device coords (screenspace [0,1] both axes)
+  let ndcx = (px + 0.5) / w;
+  let ndcy = (py + 0.5) / h;
 
-      let c2w = matrixes::look_at_matrix(view_pos, view_angles);
+  // screen space coords ([-1,1] both axes, origin at center)
+  let fov_fac = (fov / 2.).tan();
+  let ssx = (2. * ndcx - 1.) * (w / h) * fov_fac;
+  // inverted to flip y axis
+  let ssy = (1. - 2. * ndcy) * fov_fac * 2.; // * 2, as 1 character is twice as tall as it is wide (roughly)
 
-      //let c2w =  rotate_x(&rotate_y(&identity(), eulerA.y), eulerA.x);
+  let c2w = matrixes::look_at_matrix(&view_pos, &view_angles);
 
-      // let dir_x =  ((i as f32 + 0.5) - w/2.);
-      // let dir_y = (-((j as f32 + 0.5) * 2.) + h/2.);
-      // let dir_z = (-h / (2.* (fov/2.).tan() ));
-
-      //let dir = forward * dir_z + right * dir_x + up * dir_y;
-
-      // orthographic rendering (only works with look_at matrix)
-      // let ray_start = view_pos + (c2w * vec4(ssx, ssy, 0., 0.)).xyz();
-      // let ray_dir = glm::normalize(&(view_angles - view_pos));
-      // let mut lum = cast_ray(&ray_start, &ray_dir, scene.clone());
-
-      // normal perspective rays
-      let mut lum = cast_ray(view_pos, &glm::normalize(&(c2w * vec4(ssx, ssy, -1., 0.)).xyz()), scene.clone());
-
-
-      if lum < 0. {
-        lum = 0.;
-      }
-      if lum > 1. {
-        lum = 1.;
-      }
-      //lum = (i % 2) as f32;
-      win.addch(LUT[(lum * 12.) as usize] as char);
-    }
+  // normal perspective rays
+  let mut lum = cast_ray(&view_pos, &glm::normalize(&(c2w * vec4(ssx, ssy, -1., 0.)).xyz()), scene);
+  if lum < 0. {
+    lum = 0.;
   }
+  if lum > 1. {
+    lum = 1.;
+  }
+  LUT[(lum * 12.) as usize] as char
 }
 
 fn main() {
@@ -114,12 +100,12 @@ fn main() {
   window.printw("Hello Rust");
   window.refresh();
   window.nodelay(true);
-  resize_term(20, 50);
+  resize_term(30, 100);
   noecho();
-  let scene = Arc::new(RwLock::new(Scene {
+  let mut scene = Scene {
     objects: Vec::new()
-  }));
-  scene.write().unwrap().add_object(Plane {
+  };
+  scene.add_object(Plane {
     center: vec3(0.0, -5.0, 0.0),
     size: vec2(100.0, 100.0),
     material: Material {
@@ -129,7 +115,7 @@ fn main() {
   //let mut balls: Vec<Box<Sphere>> = Vec::new();
   let mut rng = thread_rng();
   for _ in 0..3 {
-    scene.write().unwrap().add_object(Sphere {
+    scene.add_object(Sphere {
       center: vec3(rng.gen_range(-10_f32..10_f32), rng.gen_range(-5_f32..5_f32), rng.gen_range(-10_f32..10_f32)),
       radius: rng.gen_range(2_f32..4_f32),
       material: Material {
@@ -144,10 +130,11 @@ fn main() {
       albedo: 1.,
     }
   };
-  scene.write().unwrap().add_object(sphere);
-  //let sphere = (scene.objects.last().unwrap());//.downcast::<Sphere>();
-  //let mut s = sphere.as_mut();
-  //let mut s = Sphere {center: vec3(0., 0., -16.), radius: 4.};
+  scene.add_object(sphere);
+
+  let scene = Arc::new(scene);
+  let window = Arc::new(window);
+
   let mut t: f32 = 0.;
   let mut then: Instant = Instant::now();
   let radius:f32 = 12.;
@@ -155,7 +142,7 @@ fn main() {
     let now = Instant::now();
     let dt = now.duration_since(then).as_secs_f32() * 1000.0;
     then = now;
-    render(&window, Arc::clone(&scene), &vec3(t.sin()*radius, 3., t.cos()*radius), &vec3(0., 0., 0.));
+    render(window.clone(), scene.clone(), &vec3(t.sin()*radius, 3., t.cos()*radius), &vec3(0., 0., 0.));
     // render(&window, Arc::clone(&scene), &vec3(10.0, 10.0, 10.0), &vec3(0., 0., 0.));
 
     // render(&window, Arc::clone(&scene), &vec3(7.0, 7.0, 10.0), &vec3(0., 0., 0.));
