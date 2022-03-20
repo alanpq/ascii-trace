@@ -96,8 +96,9 @@ fn pixel(scene: Arc<Scene>, view_pos: TVec3<f32>, view_angles: TVec3<f32>, w: i3
   if lum > 1. {
     lum = 1.;
   }
-  LUT[(lum * 12.) as usize] as char
+  let out = LUT[(lum * 12.) as usize] as char;
   coz::scope!("pixel");
+  out
 }
 
 fn main() {
