@@ -8,9 +8,29 @@ use std::rc::Rc;
 use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 mod matrixes;
 // use crate::matrixes;
+
+/*
+vec3 random_in_unit_sphere() {
+    while (true) {
+        auto p = vec3::random(-1,1);
+        if (p.length_squared() >= 1) continue;
+        return p;
+    }
+}
+ */
+
+pub fn random_unit_vector() -> TVec3<f32> {
+  let mut rng = rand::thread_rng();
+  loop {
+    let p: TVec3<f32> = vec3(rng.gen_range(0.0..1.),rng.gen_range(0.0..1.),rng.gen_range(0.0..1.));
+    if p.magnitude_squared() >= 1. {continue;}
+    return p
+  }
+}
 
 struct Scene {
   objects: Vec<Rc<RefCell<dyn Renderable>>>
@@ -93,7 +113,8 @@ impl Renderable for Plane {
   }
 }
 
-const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
+//const LUT: &[u8] = " .,-~:;=!*#$@".as_bytes();
+const LUT: &[u8] = " .~:;+=!*#%$@".as_bytes();
 
 struct IntersectResult {
   dist: f32,
@@ -155,25 +176,64 @@ fn scene_intersect<'a>(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<
   }).unwrap_or_default()
 }
 
-fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>) -> f32 {
+const AMBIENT: f32 = 0.1;
+const EPSILON: f32 = 0.001;
+
+const SAMPLES: usize = 8;
+const BOUNCES: usize = 1;
+
+enum Pass {
+  Diffuse(f32),
+  Sky(f32),
+}
+
+impl Pass {
+  pub fn val(&self) -> &f32 {
+    match self {
+      Self::Diffuse(v) => v,
+      Self::Sky(v) => v,
+    }
+  }
+}
+
+fn cast_ray(source: &TVec3<f32>, dir: &TVec3<f32>, scene: Arc<RwLock<Scene>>, bounce: usize) -> Pass {
+  if bounce > BOUNCES {
+    return Pass::Sky(0.0); 
+  }
 
   match scene_intersect(source, dir, scene.clone()) {
     Some(result) => {
       let light_dir = glm::normalize(&vec3(1., 1., 1.));
-      let dot: f32 = glm::dot(&result.normal, &light_dir);
+      let light_dot: f32 = glm::dot(&result.normal, &light_dir);
+      let light_dot = light_dot.max(0.);
       // depth render
       // 1.-(result.dist/50.)
+      let dot = glm::dot(dir, &result.normal);
+      let reflected = dir - 2.*dot*result.normal;
+     
+      let obj = result.obj.borrow();
+      let mat = obj.material();
+      let albedo = mat.albedo;
+      
+      //let reflected = cast_ray(&(result.hit + reflected * EPSILON), &reflected, scene, bounce+1);
+      let target = result.hit + result.normal + random_unit_vector();
+      let dir = glm::normalize(&(target - result.hit)); 
+      return Pass::Diffuse(albedo *
+        cast_ray(
+          &(result.hit + dir * EPSILON),
+          &dir,
+          scene, bounce+1
+        ).val());
 
       // normal render
-      0.1 + dot.max(0_f32) * &result.obj.borrow().material().albedo 
-      * match scene_intersect(&(result.hit + result.normal * 0.001), &&light_dir, scene.clone()) {
-        Some(_) => 0.,
-        None => 1.,
-      }
+      //dot.max(0_f32) * result.obj.borrow().material().albedo 
+      //* match scene_intersect(&(result.hit + result.normal * EPSILON), &light_dir, scene) {
+      //  Some(_) => 0.,
+      //  None => 1.,
+      //}
     },
-    None => 0.,
+    None => Pass::Sky(0.2),
   }
-  //1.
 }
 
 // currently using view_angles also for target_pos (cos im lazy)
@@ -225,7 +285,23 @@ fn render(win: &pancurses::Window, scene: Arc<RwLock<Scene>>, view_pos: &TVec3<f
       // let mut lum = cast_ray(&ray_start, &ray_dir, scene.clone());
 
       // normal perspective rays
-      let mut lum = cast_ray(view_pos, &glm::normalize(&(c2w * vec4(ssx, ssy, -1., 0.)).xyz()), scene.clone());
+      
+      let mut rng = thread_rng();
+      let lum: f32 = (0..SAMPLES).map(|_| {
+        let ssx = ssx + rng.gen_range(-1.0..1.0) / w;
+        let ssy = ssy + rng.gen_range(-1.0..1.0) / h;
+
+        let dir = glm::normalize(&(c2w * vec4(ssx, ssy, -1., 0.)).xyz());
+        let res = cast_ray(view_pos, &dir, scene.clone(), 0);
+        match res {
+          Pass::Sky(_) => 0.0,
+          _ => *res.val(),
+        }
+      }).sum::<f32>();
+
+      let mut lum = f32::sqrt(lum / SAMPLES as f32);
+
+      //let mut lum = cast_ray(view_pos, &glm::normalize(&(c2w * vec4(ssx, ssy, -1., 0.)).xyz()), scene.clone(), 0);
 
 
       if lum < 0. {
@@ -235,17 +311,19 @@ fn render(win: &pancurses::Window, scene: Arc<RwLock<Scene>>, view_pos: &TVec3<f
         lum = 1.;
       }
       //lum = (i % 2) as f32;
-      win.addch(LUT[(lum * 12.) as usize] as char);
+      win.addch(LUT[(lum * (LUT.len()-1) as f32) as usize] as char);
     }
   }
 }
+
+const SPEED: f32 = 2.;
 
 fn main() {
   let window = initscr();
   window.printw("Hello Rust");
   window.refresh();
   window.nodelay(true);
-  resize_term(40, 100);
+  //resize_term(40, 100);
   noecho();
   let scene = Arc::new(RwLock::new(Scene {
     objects: Vec::new()
@@ -259,7 +337,7 @@ fn main() {
   })));
   //let mut balls: Vec<Box<Sphere>> = Vec::new();
   let mut rng = thread_rng();
-  for _ in 0..3 {
+  for _ in 0..0 {
     scene.write().unwrap().objects.push(Rc::new(RefCell::new(Sphere {
       center: vec3(rng.gen_range(-10_f32..10_f32), rng.gen_range(-5_f32..5_f32), rng.gen_range(-10_f32..10_f32)),
       radius: rng.gen_range(2_f32..4_f32),
@@ -281,21 +359,29 @@ fn main() {
   //let mut s = Sphere {center: vec3(0., 0., -16.), radius: 4.};
   let mut time: f32 = 0.;
   let radius:f32 = 12.;
+
+  let mut then = Instant::now();
+  let mut dt = 0.0;
   loop {
     render(&window, Arc::clone(&scene), &vec3(time.sin()*radius,3.,time.cos()*radius), &vec3(0.,0.,0.));
-    // render(&window, Arc::clone(&scene), &vec3(10.0, 10.0, 10.0), &vec3(0., 0., 0.));
-
-    // render(&window, Arc::clone(&scene), &vec3(7.0, 7.0, 10.0), &vec3(0., 0., 0.));
+    window.mvaddstr(2, 1, format!(" total: {dt:4.2}ms / {fps:4.2} fps", dt = dt * 1000., fps = 1./dt)); 
 
 
     // sphere.borrow_mut().center = vec3(0.0,0.0,time.sin());
     // sphere.borrow_mut().radius = (3. + (time*2.).sin()) * 2.0;
-    time += 0.04;
+    let now = Instant::now();
+    dt = now.duration_since(then).as_secs_f32();
+    window.mvaddstr(1, 1, format!("render: {dt:4.2}ms / {fps:4.2} fps", dt = dt * 1000., fps = 1./dt)); 
+
     match window.getch() {
       Some(Input::KeyDC) => break,
       Some(_) => (),
       None => (),
     }
+    let now = Instant::now();
+    dt = now.duration_since(then).as_secs_f32();
+    time += dt * SPEED;
+    then = now;
   }
   endwin();
 }
